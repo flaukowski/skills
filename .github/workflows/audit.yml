@@ -1,0 +1,43 @@
+name: audit
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # The gate. Fails the build on missing frontmatter, operator paths,
+      # infrastructure IPs, credential file locations, live secrets, or a
+      # remote transport endpoint a reader would connect to.
+      - name: audit skills
+        run: node scripts/audit.mjs
+
+      # A skill listed in the manifest but absent from skills/ (or the reverse)
+      # means the manifest has drifted from what is actually here.
+      - name: manifest matches skills/
+        run: |
+          node -e '
+            const fs = require("node:fs");
+            const m = JSON.parse(fs.readFileSync("manifest.json", "utf8"));
+            const onDisk = fs.readdirSync("skills").filter(d =>
+              fs.statSync("skills/" + d).isDirectory());
+            const listed = Object.keys(m.skills);
+            const missing = listed.filter(s => !onDisk.includes(s));
+            const unlisted = onDisk.filter(s => !listed.includes(s));
+            if (missing.length) console.error("in manifest but not on disk:", missing);
+            if (unlisted.length) console.error("on disk but not in manifest:", unlisted);
+            if (missing.length || unlisted.length) process.exit(1);
+            console.log(`manifest and skills/ agree on ${listed.length} skills`);
+          '

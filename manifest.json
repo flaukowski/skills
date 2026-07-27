@@ -1,0 +1,70 @@
+{
+  "publisher": "nickflach",
+  "registry": "https://clawhub.ai",
+  "note": "Single source of truth for every published skill. Edit here, let CI audit, then publish.",
+  "skills": {
+    "0xscada": {
+      "publishedVersion": "1.0.1",
+      "importedFrom": "NickFlach/0xSCADA:workspace/skills/0xscada"
+    },
+    "adversarial-design-review": {
+      "publishedVersion": "1.0.0",
+      "importedFrom": "NickFlach/adversarial-design-review:plugins/adversarial-design-review/skills/adversarial-design-review"
+    },
+    "album-release": {
+      "publishedVersion": "1.0.1",
+      "importedFrom": "NickFlach/kannaka-radio:skills/album-release",
+      "note": "private pipeline scrubbed; republish pending"
+    },
+    "kannaka": {
+      "publishedVersion": "1.4.0",
+      "importedFrom": "NickFlach/kannaka-eye:skills/kannaka",
+      "note": "frontmatter + operator paths fixed 2026-07-26"
+    },
+    "kannaka-eye": {
+      "publishedVersion": "1.0.1",
+      "importedFrom": "NickFlach/kannaka-eye:workspace/skills/kannaka-eye"
+    },
+    "kannaka-memory": {
+      "publishedVersion": "3.1.0",
+      "importedFrom": "NickFlach/kannaka-memory:workspace/skills/kannaka-memory"
+    },
+    "kannaka-quantum": {
+      "publishedVersion": "0.2.3",
+      "importedFrom": "NickFlach/kannaka-quantum:skills/kannaka-quantum"
+    },
+    "kannaka-radio": {
+      "publishedVersion": "3.0.0",
+      "importedFrom": "NickFlach/kannaka-radio:workspace/skills/kannaka-radio"
+    },
+    "openbotcity-agent-playbook": {
+      "publishedVersion": "1.0.0",
+      "importedFrom": "clawhub registry",
+      "note": "had no repo before this one; frontmatter name is 'openbotcity'"
+    },
+    "podcast-video-publisher": {
+      "publishedVersion": "1.0.0",
+      "importedFrom": "NickFlach/kannaka-radio:skills/podcast-video-publisher"
+    },
+    "resonance-futures": {
+      "publishedVersion": "1.0.0",
+      "importedFrom": "clawhub registry",
+      "note": "had no repo before this one"
+    },
+    "skill-kannaka-constellation": {
+      "publishedVersion": "1.1.0",
+      "importedFrom": "NickFlach/Kannaktopus:skills/skill-kannaka-constellation",
+      "note": "not a duplicate; local NATS default fixed, republish pending"
+    },
+    "skill-kannaka-memory": {
+      "publishedVersion": "2.6.0",
+      "importedFrom": "NickFlach/Kannaktopus:skills/skill-kannaka-memory",
+      "note": "superseded by kannaka-memory (3.1.0); consolidate"
+    },
+    "skill-kannaka-radio": {
+      "publishedVersion": "2.0.1",
+      "importedFrom": "NickFlach/Kannaktopus:skills/skill-kannaka-radio",
+      "note": "superseded by kannaka-radio (3.0.0); consolidate"
+    }
+  }
+}
