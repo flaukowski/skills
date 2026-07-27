@@ -45,12 +45,15 @@ node scripts/publish.mjs <slug> --version 1.2.0 --changelog "..." --dry-run
 node scripts/publish.mjs <slug> --version 1.2.0 --changelog "..."
 ```
 
-`publish.mjs` refuses to publish if the audit fails, and after publishing it asks
-the registry what it actually serves. That check is not ceremony: `clawhub
-publish` has been observed printing `OK. Published <slug>@<version>` while the
-registry went on serving the previous version and a fresh `clawhub install`
-delivered the old file. Treat the registry's answer as the truth, never the
-CLI's exit message.
+`publish.mjs` refuses to publish if the audit fails, and afterwards polls the
+registry until it actually serves the new version.
+
+**Publishing is eventually consistent.** `clawhub publish` returns as soon as the
+upload is accepted; the version appears in the registry a few minutes later. A
+single immediate check reads as "the CLI lied" when the write simply has not
+landed yet — so `publish.mjs` polls for up to eight minutes and only then updates
+`manifest.json`. If it times out, re-check before republishing rather than
+burning another version number.
 
 ## What the audit enforces
 
@@ -83,5 +86,6 @@ is pre-wiring someone's agent to a bus we control.
   by `kannaka-memory` (3.1.0) and `kannaka-radio` (3.0.0). They still have live
   installs, so they need either a content refresh or a deprecation pointer —
   not silent abandonment.
-- `album-release` and `skill-kannaka-constellation` are fixed here but the
-  registry has not accepted the republish yet.
+- Two ClawHub publishers now exist: `nickflach`, which owns all 14 skills and
+  their download history, and a new empty `flaukowski`. Publishing new work under
+  the second one splits the namespace, so decide deliberately which owns what.

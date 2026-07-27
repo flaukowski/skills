@@ -67,20 +67,38 @@ const changelog = flag("changelog");
 if (changelog) args.push("--changelog", changelog);
 
 console.log(`\npublishing ${slug}@${version}...`);
-execFileSync("clawhub", args, { stdio: "inherit" });
+// On Windows `clawhub` is a .cmd shim, which execFile cannot resolve on its
+// own — hence shell:true. Args are ours, not user input.
+execFileSync("clawhub", args, { stdio: "inherit", shell: process.platform === "win32" });
 
 // 3. Verify — the registry is the authority, not the CLI's exit message.
-console.log("\nverifying against the registry...");
-const res = await fetch(`${manifest.registry}/api/v1/skills/${slug}/versions?cb=${Date.now()}`);
-const live = (await res.json()).items?.map((i) => i.version) ?? [];
+//
+// Publishing is EVENTUALLY consistent: the CLI returns as soon as the upload is
+// accepted, and the version shows up in the registry a few minutes later. So
+// poll rather than checking once. A single immediate check reads as "the CLI
+// lied" when in fact the write simply had not landed yet.
+const DEADLINE_MS = 8 * 60 * 1000;
+const EVERY_MS = 20 * 1000;
+const started = Date.now();
+let live = [];
+
+console.log("\nwaiting for the registry to serve it (publishes are async)...");
+while (Date.now() - started < DEADLINE_MS) {
+  const res = await fetch(`${manifest.registry}/api/v1/skills/${slug}/versions?cb=${Date.now()}`);
+  live = (await res.json()).items?.map((i) => i.version) ?? [];
+  if (live.includes(version)) break;
+  process.stdout.write(`  not yet (${Math.round((Date.now() - started) / 1000)}s), retrying\n`);
+  await new Promise((r) => setTimeout(r, EVERY_MS));
+}
+
 if (live.includes(version)) {
   console.log(`confirmed: registry serves ${version}`);
   entry.publishedVersion = version;
   writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
   console.log("manifest updated");
 } else {
-  console.error(`NOT LIVE: registry still lists [${live.join(", ")}]`);
-  console.error("The CLI reported success but the registry did not take it.");
-  console.error("Manifest left unchanged — do not treat this skill as published.");
+  console.error(`still not live after ${DEADLINE_MS / 60000} min; registry lists [${live.join(", ")}]`);
+  console.error("It may yet appear — re-check before republishing, so you do not burn a version number.");
+  console.error("Manifest left unchanged.");
   process.exit(1);
 }

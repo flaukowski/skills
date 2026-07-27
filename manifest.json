@@ -12,9 +12,9 @@
       "importedFrom": "NickFlach/adversarial-design-review:plugins/adversarial-design-review/skills/adversarial-design-review"
     },
     "album-release": {
-      "publishedVersion": "1.0.1",
+      "publishedVersion": "1.0.2",
       "importedFrom": "NickFlach/kannaka-radio:skills/album-release",
-      "note": "private pipeline scrubbed; republish pending"
+      "note": "private pipeline scrubbed in 1.0.2"
     },
     "kannaka": {
       "publishedVersion": "1.4.0",
@@ -52,9 +52,9 @@
       "note": "had no repo before this one"
     },
     "skill-kannaka-constellation": {
-      "publishedVersion": "1.1.0",
+      "publishedVersion": "1.2.1",
       "importedFrom": "NickFlach/Kannaktopus:skills/skill-kannaka-constellation",
-      "note": "not a duplicate; local NATS default fixed, republish pending"
+      "note": "not a duplicate; local NATS default shipped in 1.2.1"
     },
     "skill-kannaka-memory": {
       "publishedVersion": "2.6.0",
