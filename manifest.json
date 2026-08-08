@@ -12,7 +12,7 @@
       "importedFrom": "NickFlach/adversarial-design-review:plugins/adversarial-design-review/skills/adversarial-design-review"
     },
     "album-release": {
-      "publishedVersion": "1.0.2",
+      "publishedVersion": "1.1.0",
       "importedFrom": "NickFlach/kannaka-radio:skills/album-release",
       "note": "private pipeline scrubbed in 1.0.2"
     },

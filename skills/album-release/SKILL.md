@@ -1,6 +1,6 @@
 ---
 name: "Album Release Pipeline"
-description: "Ship a complete album in one run: write or reuse lyrics, render tracks, generate one cover per song, build a 1080p album film with karaoke subtitles, publish the video, deploy the audio to a radio host, and premiere it on air. Use when releasing a new album, re-running a failed phase, or timing an on-air premiere."
+description: "Ship a complete album in one run: write or reuse lyrics, render tracks, generate cover and slideshow art per song, publish either one album film or one video per track plus a playlist, deploy the audio to a radio host, premiere it on air, and fan out the links. Use when releasing a new album, re-running a failed phase, or timing an on-air premiere."
 ---
 
 # Album Release Pipeline
@@ -48,6 +48,36 @@ otherwise surfaces as a silent no-op an hour later.
 before running, and the pipeline uses it verbatim; otherwise it generates
 them. Hand-written lyrics are almost always the better album.
 
+## Per-track video release (alternate publish mode)
+
+Instead of one album film, release one video per track plus a playlist.
+This mode shipped a seven-track album end-to-end (28 art pieces, 7
+videos, playlist, link fanout) in one sitting:
+
+1. **Manifest** — extend each track with one `cover` prompt plus 2-3
+   `support` image prompts. Every prompt in the batch opens differently
+   and varies medium/palette/subject (see the art gotcha below); give
+   each *track* its own visual idiom family so the album reads as a set.
+2. **Art batch** — generate all images through the provider with
+   generous gaps for rate limits; resumable by skipping files already on
+   disk. Save each piece's artifact id alongside the image.
+3. **Render** — per track, build a slideshow that cycles twice through
+   `[cover, s1, s2, s3]` with equal slot lengths over the track
+   duration (ffmpeg concat demuxer with per-image `duration` entries,
+   last file repeated), scale/pad to 1280×720, mux the track audio,
+   `-tune stillimage`.
+4. **Upload** — one video per track (music category, public), cover as
+   thumbnail re-encoded to JPEG under 2 MB. Keep a slug→video-id ledger
+   so re-runs skip completed uploads. Space uploads by ~45s.
+5. **Verify** — after the batch, list all uploaded ids in one API call
+   and confirm each still exists; clear vanished ids from the ledger so
+   a re-run repairs them. Then create a public playlist and add the
+   videos in track order.
+6. **Link fanout** — post the playlist link everywhere; platforms
+   without hard character caps also get the full per-track link list.
+   Compose per-platform: a 300-char platform gets a two-line announce +
+   playlist URL, long-form platforms get the whole tracklist with URLs.
+
 ## Phase gating
 
 Skip phases you want to control by hand — this is how you time a premiere:
@@ -85,6 +115,33 @@ otherwise be stepped on by the showcase intro.
 - **Remote work**: batch it into few sessions. Connection churn trips
   fail2ban-style protections on most hosts, and SSH connection multiplexing
   does not work from Windows OpenSSH.
+- **Lyric generation can die silently**: if the lyric generator's model
+  API credential is dead, the builder skips every track in seconds and
+  "completes" with an empty ledger. Check the ledger is non-empty before
+  believing a run; the pre-written-lyrics path (drop files in `out_dir`)
+  is the reliable fallback and usually the better album anyway. Verify
+  the first track's prompt round-trip against the provider's record-info
+  endpoint before letting a batch run — multi-line lyrics are easy to
+  truncate to their first line in shell plumbing.
+- **Image providers may require a session before generating**: one
+  provider added a requirement to "enter" its studio context first —
+  every generate call 403s until you do. Open the session at batch start
+  and re-open it whenever that specific error reappears mid-batch.
+- **Video-host tokens go stale per machine**: the machine that last
+  re-granted OAuth has the live refresh token; other machines keep a
+  dead copy that fails with a bare 400. Run a token liveness probe
+  before any batch upload and sync the credential from the machine where
+  the grant actually happened.
+- **Fanout adapters read their environment**: broadcast code that works
+  under cron can silently lose adapters when run from a plain shell,
+  because the credentials live in env files the cron sources. Silently —
+  the adapter list shrinks, nothing errors. Source the same env the
+  crons use, and compare the adapter list against what you expect before
+  calling a fanout complete. Posting twice while debugging this means
+  deleting duplicates platform by platform.
+- **Killing a remote batch by pattern**: `pkill -f` over ssh can match
+  the ssh command line that carries it and kill your own connection.
+  Bracket a character in the pattern (`pkill -f "[a]rt.py"`).
 
 ## Related
 
