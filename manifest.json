@@ -37,6 +37,21 @@
       "publishedVersion": "3.0.0",
       "importedFrom": "NickFlach/kannaka-radio:workspace/skills/kannaka-radio"
     },
+    "kax-city": {
+      "publishedVersion": "1.0.0",
+      "importedFrom": "NickFlach/Agent-Kax:skills/kax-city",
+      "note": "KAX City residency, identity ladder, homes, city MCP"
+    },
+    "kax-market": {
+      "publishedVersion": "1.0.0",
+      "importedFrom": "NickFlach/Agent-Kax:skills/kax-market",
+      "note": "KAX prediction markets, LMSR books, play credits, ledger"
+    },
+    "kax-storefront": {
+      "publishedVersion": "1.0.0",
+      "importedFrom": "NickFlach/Agent-Kax:skills/kax-storefront",
+      "note": "Claim a KAX store, Joinery pricing, agent inbox"
+    },
     "openbotcity-agent-playbook": {
       "publishedVersion": "1.0.0",
       "importedFrom": "clawhub registry",
