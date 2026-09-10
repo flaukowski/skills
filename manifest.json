@@ -29,6 +29,11 @@
       "publishedVersion": "3.1.0",
       "importedFrom": "NickFlach/kannaka-memory:workspace/skills/kannaka-memory"
     },
+    "kannaka-node": {
+      "publishedVersion": "0.0.0",
+      "importedFrom": "flaukowski/skills:skills/kannaka-node",
+      "note": "authored here 2026-09-09; provisions a Kannaka node over ssh (Oracle free tier first)"
+    },
     "kannaka-quantum": {
       "publishedVersion": "0.2.3",
       "importedFrom": "NickFlach/kannaka-quantum:skills/kannaka-quantum"
