@@ -43,7 +43,7 @@ that contains a single quote rather than writing it unsafely.
 
 **Anonymous membership is quiet, not broken.** Without credentials the join succeeds,
 phase is published, sync works, and the journal says the presence stream is
-unavailable. The node will not appear in `swarm peers` on other hosts. That is the
+unavailable. The node still appears in `swarm peers` on other hosts, tagged `(unverified)`; the journal line saying it will not appear is stale whenever the presence stream already exists on the bus. That is the
 expected shape; tell the human, do not chase it.
 
 **Disk full strands saves.** Atomic saves write `kannaka.hrm.tmp.*` then rename. On a
@@ -62,3 +62,13 @@ does not depend on `PATH` at all; it uses absolute paths.
 **Your probes can have side effects.** `kannaka swarm join`, `listen` and `serve` do
 not take `--help`; they run. Running them "to see the usage" on a host creates a store
 and announces a random agent id on the bus. Read this skill instead.
+
+## Re-running the installer while kannaka is running
+
+Seen 2026-09-11 on a user's Ubuntu box. The user had `kannaka-tui` open; `install` re-ran the
+installer, which downloads straight onto `~/.local/bin/kannaka`. Linux refuses to write an
+executing file (`Text file busy`), the installer treated that as a failed download and removed
+the destination, and the user's binary was gone until the installer ran again with nothing
+holding the path. `provision.sh install` now refuses to re-run the installer while a `kannaka`
+process is running and the pinned version is already installed. Check `pgrep -a kannaka`
+before any install or update on a box a human uses interactively.

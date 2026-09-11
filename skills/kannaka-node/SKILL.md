@@ -33,7 +33,7 @@ store. That is what you are building.
 | node name | `brads-node`, `kannaka-east-1` | letters, digits, `.` `_` `-`; this becomes the swarm agent id and is public on the bus |
 | role | `member` (default) or `serve` | `serve` also answers remote recall for other agents; needs credentials |
 | brain | `none` (default), `hosted --email x@y`, `local` | `hosted` mints a budgeted key from the Kannaka portal; `local` pulls a 7B model into ollama and needs more RAM than a free tier has |
-| swarm credentials | `NATS_USER` / `NATS_PASSWORD` | **optional**; issued by the swarm's operator. Without them the node joins anonymously: it reads and publishes phase but does not appear in the presence roster and cannot serve recall. Ask the human whether they were given any; do not guess and do not ask the operator on their behalf unless they say to |
+| swarm credentials | `NATS_USER` / `NATS_PASSWORD` | **optional**; issued by the swarm's operator. Without them the node joins anonymously: it reads and publishes phase and memories and shows in the presence roster tagged `(unverified)`, but it cannot prove its identity and cannot serve recall. Ask the human whether they were given any; do not guess and do not ask the operator on their behalf unless they say to |
 
 If the human does not know the ssh user, Oracle Linux images use `opc`, Ubuntu images
 `ubuntu`, Debian `debian`, Fedora `fedora`, Amazon Linux `ec2-user`.

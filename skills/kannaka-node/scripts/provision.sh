@@ -92,6 +92,18 @@ install_bins() {
     hosted) [ -n "${BRAIN_EMAIL:-}" ] || { echo "BRAIN=hosted needs BRAIN_EMAIL" >&2; return 1; }; flags="$flags --brain hosted --email $BRAIN_EMAIL";;
     local)  flags="$flags --brain local";;
   esac
+  # A running kannaka holds ~/.local/bin/kannaka open; the installer downloads straight
+  # onto that path, Linux refuses the write (Text file busy) and the installer then
+  # removes the destination as if it were a partial download. On 2026-09-11 that
+  # deleted a user's working binary while their TUI was open. Refuse to re-run the
+  # installer in that state when a binary is already there (kannaka-plugin #23).
+  if [ -x "$LOCAL_BIN" ]; then
+    if pgrep -x kannaka >/dev/null 2>&1 || ps -eo comm 2>/dev/null | grep -qx kannaka; then
+      warn "kannaka is running on this host; not re-running the installer over a busy binary. Stop the running kannaka processes (e.g. a kannaka-tui) and re-run install to update."
+      ok "$("$LOCAL_BIN" --version 2>/dev/null | head -1) at $LOCAL_BIN (kept)"
+      return 0
+    fi
+  fi
   as_user "curl -fsSL '$INSTALL_URL' | sh -s -- $flags" || { echo "installer failed" >&2; return 1; }
   [ -x "$LOCAL_BIN" ] || { echo "installer finished but $LOCAL_BIN is missing" >&2; return 1; }
   ok "$("$LOCAL_BIN" --version 2>/dev/null | head -1) at $LOCAL_BIN"
@@ -142,7 +154,7 @@ credentials() {
   say "== credentials"
   if [ -z "${NATS_USER:-}" ] || [ -z "${NATS_PASSWORD:-}" ]; then
     if [ -f "$NATS_ENV" ]; then ok "credentials file already present (kept)"; return 0; fi
-    warn "NATS_USER/NATS_PASSWORD not in the environment; the node will join anonymously (it can read and publish phase, and will not appear in the presence roster)"; return 0
+    warn "NATS_USER/NATS_PASSWORD not in the environment; the node will join anonymously (it can read and publish phase; other hosts list it as (unverified))"; return 0
   fi
   case "$NATS_PASSWORD" in *"'"*) echo "a password containing a single quote cannot be stored safely by this script" >&2; return 1;; esac
   # Single-quoted on purpose: the file is sourced by a shell, and an unquoted
@@ -289,7 +301,7 @@ verify() {
       log="$($J -u kannaka-node -n 60 --no-pager 2>/dev/null)"
       if printf '%s' "$log" | grep -q "Joined swarm as"; then ok "joined the swarm (journal)"; else warn "no 'Joined swarm' line in the last 60 journal lines yet (give it a minute, then: journalctl -u kannaka-node)"; fi
       printf '%s' "$log" | grep -qi "Authorization Violation" && fail "NATS rejected the credentials (Authorization Violation)"
-      printf '%s' "$log" | grep -q "presence stream unavailable" && say "  info  anonymous membership: this node will not appear in other hosts' peer lists (expected without credentials)"
+      printf '%s' "$log" | grep -q "presence stream unavailable" && say "  info  anonymous membership: other hosts list this node as (unverified); the journal's 'will NOT appear' line is stale when the presence stream already exists"
     else warn "cannot read the journal as $U (not in adm/systemd-journal, no sudo); skipping the join check"; fi
   fi
   # A round trip through the store, read-only for status so it never contends
