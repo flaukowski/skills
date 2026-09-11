@@ -33,7 +33,7 @@ store. That is what you are building.
 | node name | `brads-node`, `kannaka-east-1` | letters, digits, `.` `_` `-`; this becomes the swarm agent id and is public on the bus |
 | role | `member` (default) or `serve` | `serve` also answers remote recall for other agents; needs credentials |
 | brain | `none` (default), `hosted --email x@y`, `local` | `hosted` mints a budgeted key from the Kannaka portal; `local` pulls a 7B model into ollama and needs more RAM than a free tier has |
-| swarm credentials | `NATS_USER` / `NATS_PASSWORD` | **optional**; issued by the swarm's operator. Without them the node joins anonymously: it reads and publishes phase but does not appear in the presence roster and cannot serve recall. Ask the human whether they were given any; do not guess and do not ask the operator on their behalf unless they say to |
+| swarm credentials | `NATS_USER` / `NATS_PASSWORD` | **optional**; issued by the swarm's operator. Without them the node still joins, publishes phase and syncs memories; if the presence stream already exists on the bus (it does on a running swarm) other hosts list it in `kannaka swarm peers`. What credentials govern is what the broker lets the node do: create the presence stream, and `serve` recall. The `(unverified)` tag in peer lists is something else: every host tags any peer not on its own `[swarm_trust].trusted_agents` allowlist that way, credentialed or not. Ask the human whether they were given any; do not guess and do not ask the operator on their behalf unless they say to |
 
 If the human does not know the ssh user, Oracle Linux images use `opc`, Ubuntu images
 `ubuntu`, Debian `debian`, Fedora `fedora`, Amazon Linux `ec2-user`.
@@ -54,7 +54,7 @@ missing; a `WARN` means proceed with the caveat in the hand-off.
 which reads the constellation's signed manifest and downloads a pinned, sha256-checked
 release for this architecture into `~/.local/bin`. It also installs the dashboard and the
 KannakaHDL binary. With `BRAIN=hosted BRAIN_EMAIL=…` or `BRAIN=local` in the environment
-it sets up the model as well. It is idempotent.
+it sets up the model as well. It is idempotent; if one of the three binaries is in use (a `kannaka-tui`, a chat) it stops and names it rather than let the installer write over a busy file.
 
 **3. Configure.** `bash provision.sh configure --agent-id NAME [--display-name "Name"]`.
 Writes `~/.kannaka/config.toml` with the identity and the swarm bus, mode 0600. If a
@@ -118,9 +118,11 @@ first failure. Prefer the steps the first time you use this skill on a new kind 
 
 ## After hand-off
 
-The node keeps itself in sync and dreams nightly. Updating is `kannaka update` (it
-verifies the release's sha256), then copy the new binary to `/usr/local/bin` with a
-move-aside, then `systemctl restart kannaka-node`. The human can watch it with
+The node keeps itself in sync and dreams nightly. Updating is `bash provision.sh install`
+(manifest-pinned, sha256-verified) followed by `sudo bash provision.sh service`, which swaps
+the copy in `/usr/local/bin` with a move-aside and restarts the unit. Do not use
+`kannaka update` on a node: it follows the first `kannaka` on PATH, pulls the latest release
+rather than the manifest pin, and cannot write `/usr/local/bin` as the login user. The human can watch it with
 `journalctl -u kannaka-node -f` and see its neighbours with `kannaka swarm peers`.
 
 `references/oracle-cloud.md` has the Oracle free-tier specifics.
