@@ -48,6 +48,17 @@ warn() { printf '  WARN  %s\n' "$*"; }
 fail() { printf '  FAIL  %s\n' "$*"; FAILED=1; }
 have() { command -v "$1" >/dev/null 2>&1; }
 as_user() { if [ "$(id -un)" = "$U" ]; then bash -c "$*"; else sudo -u "$U" -H bash -c "$*"; fi; }
+# Is this exact file being executed by any process? fuser when present; else walk
+# /proc/*/exe (Linux). Unknown platforms answer "not busy" and let the installer decide.
+bin_busy() {
+  if have fuser; then fuser "$1" >/dev/null 2>&1; return $?; fi
+  target="$(readlink -f "$1" 2>/dev/null)" || return 1
+  for p in /proc/[0-9]*/exe; do
+    [ "$(readlink -f "$p" 2>/dev/null)" = "$target" ] && return 0
+  done
+  return 1
+}
+
 need_root() { if [ "$(id -u)" -ne 0 ]; then if sudo -n true 2>/dev/null; then SUDO="sudo"; else echo "this step needs root (passwordless sudo, or run as root)" >&2; exit 2; fi; else SUDO=""; fi; }
 
 # A value for a TOML key in a table, if the file has it. Crude on purpose: the
@@ -92,17 +103,20 @@ install_bins() {
     hosted) [ -n "${BRAIN_EMAIL:-}" ] || { echo "BRAIN=hosted needs BRAIN_EMAIL" >&2; return 1; }; flags="$flags --brain hosted --email $BRAIN_EMAIL";;
     local)  flags="$flags --brain local";;
   esac
-  # A running kannaka holds ~/.local/bin/kannaka open; the installer downloads straight
-  # onto that path, Linux refuses the write (Text file busy) and the installer then
-  # removes the destination as if it were a partial download. On 2026-09-11 that
-  # deleted a user's working binary while their TUI was open. Refuse to re-run the
-  # installer in that state when a binary is already there (kannaka-plugin #23).
-  if [ -x "$LOCAL_BIN" ]; then
-    if pgrep -x kannaka >/dev/null 2>&1 || ps -eo comm 2>/dev/null | grep -qx kannaka; then
-      warn "kannaka is running on this host; not re-running the installer over a busy binary. Stop the running kannaka processes (e.g. a kannaka-tui) and re-run install to update."
-      ok "$("$LOCAL_BIN" --version 2>/dev/null | head -1) at $LOCAL_BIN (kept)"
-      return 0
-    fi
+  # The installer downloads straight onto ~/.local/bin/{kannaka,kannaka-tui,kannaka-hdl}.
+  # If one of those files is executing, Linux refuses the write (Text file busy) and the
+  # installer removes the destination as if it were a partial download. On 2026-09-11
+  # that deleted a user's kannaka, then their kannaka-tui, while the TUI was open
+  # (kannaka-plugin #23). Test the FILES, not a process name: the node service runs
+  # /usr/local/bin/kannaka, a different file, and must not block an update.
+  busy=""
+  for b in kannaka kannaka-tui kannaka-hdl; do
+    f="$(dirname "$LOCAL_BIN")/$b"
+    [ -f "$f" ] && bin_busy "$f" && busy="$busy $b"
+  done
+  if [ -n "$busy" ]; then
+    warn "in use:$busy (under $(dirname "$LOCAL_BIN")). The installer would write onto a running binary and delete it on failure. Close the kannaka-tui / chat that holds it, then re-run install."
+    return 1
   fi
   as_user "curl -fsSL '$INSTALL_URL' | sh -s -- $flags" || { echo "installer failed" >&2; return 1; }
   [ -x "$LOCAL_BIN" ] || { echo "installer finished but $LOCAL_BIN is missing" >&2; return 1; }
@@ -154,7 +168,7 @@ credentials() {
   say "== credentials"
   if [ -z "${NATS_USER:-}" ] || [ -z "${NATS_PASSWORD:-}" ]; then
     if [ -f "$NATS_ENV" ]; then ok "credentials file already present (kept)"; return 0; fi
-    warn "NATS_USER/NATS_PASSWORD not in the environment; the node will join anonymously (it can read and publish phase; other hosts list it as (unverified))"; return 0
+    warn "NATS_USER/NATS_PASSWORD not in the environment; the node will join anonymously (it still joins, publishes phase and syncs; it cannot create the presence stream or serve recall)"; return 0
   fi
   case "$NATS_PASSWORD" in *"'"*) echo "a password containing a single quote cannot be stored safely by this script" >&2; return 1;; esac
   # Single-quoted on purpose: the file is sourced by a shell, and an unquoted
@@ -270,14 +284,16 @@ EOF
     [ -f "$SYS_BIN" ] && $SUDO mv "$SYS_BIN" "$SYS_BIN.previous"   # never overwrite a running binary in place
     $SUDO install -m755 "$LOCAL_BIN" "$SYS_BIN"
     have restorecon && $SUDO restorecon "$SYS_BIN" 2>/dev/null || true
-    ok "binary copied to $SYS_BIN"
-  else ok "$SYS_BIN is current"; fi
+    ok "binary copied to $SYS_BIN"; sys_bin_changed=1
+  else ok "$SYS_BIN is current"; sys_bin_changed=0; fi
   printf '%s\n' "$runner_body" | $SUDO tee "$RUNNER" >/dev/null && $SUDO chmod 755 "$RUNNER"
   printf '%s\n' "$unit_node" | $SUDO tee "$UNIT_NODE" >/dev/null
   if [ "$ROLE" = serve ]; then printf '%s\n' "$unit_serve" | $SUDO tee "$UNIT_SERVE" >/dev/null; fi
   if [ "$DREAM" = true ]; then printf '%s\n' "$unit_dream" | $SUDO tee "$UNIT_DREAM" >/dev/null; printf '%s\n' "$timer_dream" | $SUDO tee "$TIMER_DREAM" >/dev/null; fi
   $SUDO systemctl daemon-reload
   $SUDO systemctl enable --now kannaka-node.service >/dev/null 2>&1 || $SUDO systemctl restart kannaka-node.service
+  # enable --now is a no-op on a unit that is already running; a new binary needs a restart.
+  [ "$sys_bin_changed" = 1 ] && $SUDO systemctl restart kannaka-node.service
   [ "$ROLE" = serve ] && $SUDO systemctl enable --now kannaka-serve.service >/dev/null 2>&1
   [ "$DREAM" = true ] && $SUDO systemctl enable --now kannaka-dream.timer >/dev/null 2>&1
   sleep 3
@@ -301,7 +317,7 @@ verify() {
       log="$($J -u kannaka-node -n 60 --no-pager 2>/dev/null)"
       if printf '%s' "$log" | grep -q "Joined swarm as"; then ok "joined the swarm (journal)"; else warn "no 'Joined swarm' line in the last 60 journal lines yet (give it a minute, then: journalctl -u kannaka-node)"; fi
       printf '%s' "$log" | grep -qi "Authorization Violation" && fail "NATS rejected the credentials (Authorization Violation)"
-      printf '%s' "$log" | grep -q "presence stream unavailable" && say "  info  anonymous membership: other hosts list this node as (unverified); the journal's 'will NOT appear' line is stale when the presence stream already exists"
+      printf '%s' "$log" | grep -q "presence stream unavailable" && say "  info  anonymous membership: this identity cannot create the presence stream; when the stream already exists on the bus the node is still listed by other hosts (the 'will NOT appear' line is stale then)"
     else warn "cannot read the journal as $U (not in adm/systemd-journal, no sudo); skipping the join check"; fi
   fi
   # A round trip through the store, read-only for status so it never contends
@@ -331,7 +347,7 @@ state       $(systemctl is-active kannaka-node 2>/dev/null || echo "n/a")
 check       systemctl status kannaka-node; journalctl -u kannaka-node -f
 status      KANNAKA_READONLY=1 kannaka status
 peers       kannaka swarm peers
-update      kannaka update && sudo install -m755 $LOCAL_BIN $SYS_BIN && sudo systemctl restart kannaka-node
+update      bash provision.sh install && sudo bash provision.sh service   (manifest-pinned; swaps $SYS_BIN with a move-aside and restarts)
 uninstall   bash provision.sh uninstall   (keeps $DATA)
 EOF
 }
