@@ -314,8 +314,10 @@ verify() {
     # The journal is readable by root and the adm/systemd-journal groups only.
     if journalctl -u kannaka-node -n 1 >/dev/null 2>&1; then J="journalctl"; elif sudo -n true 2>/dev/null; then J="sudo -n journalctl"; else J=""; fi
     if [ -n "$J" ]; then
-      log="$($J -u kannaka-node -n 60 --no-pager 2>/dev/null)"
-      if printf '%s' "$log" | grep -q "Joined swarm as"; then ok "joined the swarm (journal)"; else warn "no 'Joined swarm' line in the last 60 journal lines yet (give it a minute, then: journalctl -u kannaka-node)"; fi
+      inv="$(systemctl show -p InvocationID --value kannaka-node 2>/dev/null)"
+      # This run's journal, not the last N lines: a node up for hours has its join line far back.
+      if [ -n "$inv" ]; then log="$($J _SYSTEMD_INVOCATION_ID="$inv" --no-pager 2>/dev/null)"; else log="$($J -u kannaka-node -n 200 --no-pager 2>/dev/null)"; fi
+      if printf '%s' "$log" | grep -q "Joined swarm as"; then ok "joined the swarm (journal)"; else warn "no 'Joined swarm' line in this run's journal yet (give it a minute, then: journalctl -u kannaka-node)"; fi
       printf '%s' "$log" | grep -qi "Authorization Violation" && fail "NATS rejected the credentials (Authorization Violation)"
       printf '%s' "$log" | grep -q "presence stream unavailable" && say "  info  anonymous membership: this identity cannot create the presence stream; when the stream already exists on the bus the node is still listed by other hosts (the 'will NOT appear' line is stale then)"
     else warn "cannot read the journal as $U (not in adm/systemd-journal, no sudo); skipping the join check"; fi
