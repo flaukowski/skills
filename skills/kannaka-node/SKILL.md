@@ -85,14 +85,52 @@ how to check, how to update, how to uninstall. Give the human that block verbati
 anything the preflight warned about. If the node joined anonymously, say so and say why
 it matters.
 
+**7. Observatory (optional).** `bash provision.sh observatory --src PATH|URL` gives the node
+its own dashboard: its memory as a 3D field, its clusters, its Φ. It reads THIS node by
+shelling out to the local kannaka binary, so it needs no credentials of any kind.
+
+It always writes `~/.kannaka/observatory-profile.json` naming this node. That file is the
+point of the step: without it the dashboard falls back to its built-in default, which is
+one particular operator's constellation, and it would report that operator's radio, ORC and
+KAX as permanently DOWN on a machine that never ran them.
+
+`kannaka-observatory` is a private repo, so the step cannot fetch it unaided. Pass a
+tarball or a checkout with `--src`, or set `GH_TOKEN` to a token with read access. With no
+source it refuses and prints how to get one; it does not guess.
+
+Useful flags:
+
+- `--peer "Name=https://host"` — another observatory this one may overlay, repeatable. The
+  peer is added to the SSRF allowlist, so declaring it is what makes it reachable.
+- `--agent-id NAME` — name the node explicitly. Use it when `[agent] id` in config.toml is
+  a generated placeholder while the node joins the swarm under a different name; that is
+  real and it happens on older boxes.
+- `--no-service` — install and configure but do not create a unit.
+- `--port N`, `--host ADDR`, `--force-profile`.
+
+⚠ **It binds 127.0.0.1 and should stay that way.** The dashboard has no authentication and
+`/api/hrm/*` serves the node's memory contents, so a public bind publishes that node's
+memory to anyone who finds the port. Reach it over a tunnel:
+
+```
+ssh -L 3334:127.0.0.1:3334 <user>@<host>     then open http://localhost:3334
+```
+
+To expose it for real, put something that authenticates in front of loopback. Do not set
+`OBSERVATORY_HOST=0.0.0.0` and open a firewall port — see *What you must not do* below.
+
 `bash provision.sh all --agent-id NAME …` runs 1 through 6 in order and stops at the
-first failure. Prefer the steps the first time you use this skill on a new kind of host.
+first failure. The observatory is deliberately NOT part of `all`: it needs a source that
+`all` has no way to supply. Prefer the steps the first time you use this skill on a new
+kind of host.
 
 ## What you must not do
 
 - Do not open inbound firewall ports or edit cloud security lists. A node needs only
   **outbound** 443 and 4222. If someone asks you to open 4222 inbound, they are
-  thinking of running a NATS server, which is not this skill.
+  thinking of running a NATS server, which is not this skill. The same applies to the
+  observatory port: it is loopback-only and reached over an ssh tunnel, never by opening
+  3334 to the world — the dashboard has no login and serves the node's memories.
 - Do not copy, cat, echo, or log the ssh key or the swarm password. The credentials
   step reads them from the environment and writes a 0600 file; that is the only place
   they land.
