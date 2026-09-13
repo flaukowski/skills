@@ -30,9 +30,9 @@
       "importedFrom": "NickFlach/kannaka-memory:workspace/skills/kannaka-memory"
     },
     "kannaka-node": {
-      "publishedVersion": "1.0.2",
+      "publishedVersion": "1.1.0",
       "importedFrom": "flaukowski/skills:skills/kannaka-node",
-      "note": "authored here 2026-09-09; provisions a Kannaka node over ssh (Oracle free tier first)"
+      "note": "authored here 2026-09-09; provisions a Kannaka node over ssh (Oracle free tier first). 1.1.0 adds the observatory step: the node's own loopback-only dashboard."
     },
     "kannaka-quantum": {
       "publishedVersion": "0.2.3",

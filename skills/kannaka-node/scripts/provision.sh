@@ -9,6 +9,9 @@
 #        [--nats-url nats://host:4222] [--no-swarm]  writes config, keeps what exists
 #   bash provision.sh credentials                   reads NATS_USER/NATS_PASSWORD from env, writes the env file 0600
 #   bash provision.sh service [--role member|serve] [--no-dream]   systemd units (root)
+#   bash provision.sh observatory --src PATH|URL [--peer "NAME=URL"] [--port N]
+#        [--host ADDR] [--agent-id NAME] [--no-service] [--force-profile]
+#                                                    this node's own dashboard
 #   bash provision.sh verify                        proves the node is alive
 #   bash provision.sh report                        the hand-off summary
 #   bash provision.sh all --agent-id NAME ...       preflight → install → configure → service → verify → report
@@ -19,6 +22,8 @@
 #   NATS_USER / NATS_PASSWORD   swarm credentials from the swarm operator (credentials step)
 #   INSTALL_URL    default https://install.ninja-portal.com/kannaka
 #   BRAIN          none | hosted | local  (default none); BRAIN_EMAIL for hosted
+#   OBSERVATORY_SRC  default --src for the observatory step (tarball, URL, or directory)
+#   GH_TOKEN / GITHUB_TOKEN  used only to fetch the observatory from its private repo
 set -uo pipefail
 
 INSTALL_URL="${INSTALL_URL:-https://install.ninja-portal.com/kannaka}"
@@ -41,6 +46,10 @@ UNIT_NODE="/etc/systemd/system/kannaka-node.service"
 UNIT_SERVE="/etc/systemd/system/kannaka-serve.service"
 UNIT_DREAM="/etc/systemd/system/kannaka-dream.service"
 TIMER_DREAM="/etc/systemd/system/kannaka-dream.timer"
+OBS_DIR="$H/kannaka-observatory"
+OBS_PROFILE="$DATA/observatory-profile.json"
+UNIT_OBS="/etc/systemd/system/kannaka-observatory.service"
+OBS_REPO="${OBSERVATORY_REPO:-kannaka-labs/kannaka-observatory}"
 
 say()  { printf '%s\n' "$*"; }
 ok()   { printf '  ok    %s\n' "$*"; }
@@ -303,6 +312,199 @@ EOF
   return 0
 }
 
+# ---------------------------------------------------------------- observatory
+# The node's own dashboard: its memory as a 3D field, its clusters, its phi.
+#
+# It reads THIS node -- it shells out to the local kannaka binary and needs no
+# credentials at all. It is not a window onto someone else's constellation; with
+# no profile it falls back to the upstream default and reports another operator's
+# services as permanently DOWN, so this step always writes a profile naming this
+# node.
+#
+# LOOPBACK BY DEFAULT, and think before changing that: the dashboard has no
+# authentication and /api/hrm/* serves this node's memory contents. Reach it with
+#   ssh -L 3334:127.0.0.1:3334 <user>@<this host>
+# and open http://localhost:3334. To expose it, put an authenticating proxy in
+# front of loopback rather than binding the world.
+observatory() {
+  OBS_SRC="${OBSERVATORY_SRC:-}"; OBS_PORT=3334; OBS_HOST="127.0.0.1"
+  OBS_SERVICE=true; OBS_FORCE_PROFILE=false
+  set -- "$@"; OBS_PEERS=""; OBS_AGENT_OVERRIDE=""
+  while [ $# -gt 0 ]; do case "$1" in
+    --src) OBS_SRC="$2"; shift;;
+    --port) OBS_PORT="$2"; shift;;
+    --host) OBS_HOST="$2"; shift;;
+    --peer) OBS_PEERS="$OBS_PEERS --peer $(printf '%q' "$2")"; shift;;
+    --agent-id) OBS_AGENT_OVERRIDE="$2"; shift;;
+    --no-service) OBS_SERVICE=false;;
+    --force-profile) OBS_FORCE_PROFILE=true;;
+    *) echo "observatory: unknown flag $1" >&2; return 1;; esac; shift; done
+  say "== observatory"
+
+  # -- what it needs --
+  have node || { echo "node is required (18+). Install nodejs, then re-run." >&2; return 1; }
+  node_major="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"
+  [ "$node_major" -ge 18 ] 2>/dev/null || { echo "node 18+ required, found $(node --version 2>/dev/null)" >&2; return 1; }
+  have npm || { echo "npm is required. Install it, then re-run." >&2; return 1; }
+  ok "node $(node --version), npm $(npm --version)"
+  [ -f "$CFG" ] || { echo "configure first: no $CFG (the profile is named from [agent] id)" >&2; return 1; }
+
+  # -- where the code comes from --
+  # The repo is private, so there is no unauthenticated clone. In order: an
+  # explicit --src, then a token, then an honest refusal that says what to do.
+  tmp_tar=""
+  if [ -z "$OBS_SRC" ]; then
+    tok="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
+    if [ -n "$tok" ]; then
+      tmp_tar="${TMPDIR:-/tmp}/kannaka-observatory.$$.tar.gz"
+      say "  fetching $OBS_REPO with the supplied token"
+      if ! curl -fsSL -H "Authorization: Bearer $tok" -H "Accept: application/vnd.github+json" \
+                "https://api.github.com/repos/$OBS_REPO/tarball" -o "$tmp_tar"; then
+        rm -f "$tmp_tar"
+        echo "token fetch of $OBS_REPO failed (bad token, or no access to it)" >&2; return 1
+      fi
+      OBS_SRC="$tmp_tar"
+    else
+      cat >&2 <<'MSG'
+observatory: no source given. kannaka-observatory is a private repo, so this
+step cannot download it unaided. Give it one of:
+
+  --src /path/to/observatory.tar.gz     a tarball someone sent you
+  --src /path/to/checkout               a directory you already have
+  GH_TOKEN=<token> bash provision.sh observatory     a token with read access
+
+To make a tarball from a checkout elsewhere:
+  git -C <checkout> archive --format=tar.gz HEAD -o observatory.tar.gz
+MSG
+      return 1
+    fi
+  fi
+
+  # -- unpack --
+  # OVERLAY, never delete-and-replace. A long-lived install accumulates files
+  # that are not in the repo -- an operator's own page, screenshots, .bak copies
+  # -- and wiping the directory takes them with it.
+  as_user "mkdir -p '$OBS_DIR'"
+  if [ -d "$OBS_SRC" ]; then
+    as_user "cp -r '$OBS_SRC/.' '$OBS_DIR/'"
+    ok "copied from $OBS_SRC"
+  elif [ -f "$OBS_SRC" ]; then
+    # A GitHub API tarball wraps everything in one generated top-level
+    # directory; a `git archive` tarball does not. Detect which, because a
+    # wrong --strip-components lands the files one level off and the only
+    # symptom is a server that is quietly not there.
+    #
+    # Read the listing into a variable and match it in-shell. The obvious
+    # `tar tzf ... | grep -qx server.js` is WRONG under `set -o pipefail`:
+    # grep -q exits at the first hit, tar dies of SIGPIPE, and the pipeline
+    # reports failure even though the entry was found -- so a flat archive is
+    # misread as nested and every file lands one level too deep.
+    obs_listing="$(tar tzf "$OBS_SRC")" || { echo "observatory: cannot read '$OBS_SRC' as a tar.gz" >&2; return 1; }
+    case "
+$obs_listing
+" in
+      *"
+server.js
+"*) strip=0;;
+      *)  strip=1;;
+    esac
+    as_user "tar xzf '$OBS_SRC' -C '$OBS_DIR' --strip-components=$strip"
+    ok "extracted $OBS_SRC (strip-components=$strip)"
+  else
+    echo "observatory: --src '$OBS_SRC' is neither a file nor a directory" >&2; return 1
+  fi
+  [ -n "$tmp_tar" ] && rm -f "$tmp_tar"
+  [ -f "$OBS_DIR/server.js" ] || { echo "observatory: no server.js under $OBS_DIR after unpacking" >&2; return 1; }
+
+  # -- dependencies (two, runtime only) --
+  as_user "cd '$OBS_DIR' && npm install --omit=dev --no-audit --no-fund" >/dev/null 2>&1 \
+    || { echo "npm install failed in $OBS_DIR" >&2; return 1; }
+  ok "dependencies installed"
+
+  # -- this node's profile --
+  if [ -f "$OBS_PROFILE" ] && [ "$OBS_FORCE_PROFILE" != true ]; then
+    ok "profile kept: $OBS_PROFILE (--force-profile to rewrite)"
+  else
+    fp=""; [ "$OBS_FORCE_PROFILE" = true ] && fp="--force"
+    ai=""; [ -n "$OBS_AGENT_OVERRIDE" ] && ai="--agent-id $(printf '%q' "$OBS_AGENT_OVERRIDE")"
+    as_user "cd '$OBS_DIR' && KANNAKA_DATA_DIR='$DATA' node scripts/init-profile.js $fp $ai $OBS_PEERS" \
+      || { echo "could not write $OBS_PROFILE" >&2; return 1; }
+  fi
+
+  if [ "$OBS_SERVICE" != true ]; then
+    ok "installed, no service (--no-service). Run it by hand with:"
+    say "    cd $OBS_DIR && OBSERVATORY_HOST=$OBS_HOST PORT=$OBS_PORT KANNAKA_DATA_DIR=$DATA node server.js"
+    return 0
+  fi
+
+  OBS_AGENT="$OBS_AGENT_OVERRIDE"; [ -n "$OBS_AGENT" ] || OBS_AGENT="$(toml_get "$CFG" agent id)"
+  unit_obs="$(cat <<EOF
+# kannaka-observatory.service — written by kannaka-node/provision.sh
+#
+# BOUND TO $OBS_HOST. The dashboard has no authentication and /api/hrm/* serves
+# this node's memory contents, so do not set OBSERVATORY_HOST to 0.0.0.0 without
+# putting something that authenticates in front of it first.
+#
+#   ssh -L $OBS_PORT:127.0.0.1:$OBS_PORT $U@<this host>   then http://localhost:$OBS_PORT
+[Unit]
+Description=Kannaka Observatory ($OBS_AGENT) — local HRM dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=$U
+WorkingDirectory=$OBS_DIR
+Environment=OBSERVATORY_HOST=$OBS_HOST
+Environment=PORT=$OBS_PORT
+Environment=KANNAKA_DATA_DIR=$DATA
+Environment=KANNAKA_BIN=$SYS_BIN
+ExecStart=/usr/bin/env node $OBS_DIR/server.js
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+EOF
+)"
+  if ! have systemctl || [ ! -d /run/systemd/system ]; then
+    warn "no systemd here; this is the unit to install on a systemd host:"
+    printf '\n--- %s\n%s\n' "$UNIT_OBS" "$unit_obs"
+    return 0
+  fi
+  need_root
+  printf '%s\n' "$unit_obs" | $SUDO tee "$UNIT_OBS" >/dev/null
+  $SUDO systemctl daemon-reload
+  $SUDO systemctl enable kannaka-observatory.service >/dev/null 2>&1 || true
+  # Always restart, not just enable --now: on a re-run the unit is already
+  # active and only a restart picks up newly extracted code.
+  $SUDO systemctl restart kannaka-observatory.service
+  sleep 6
+  ok "kannaka-observatory: $(systemctl is-active kannaka-observatory)"
+
+  # Prove it answers AND prove the bind is the one asked for. "active" says
+  # neither: a server that crashed on its first request is still active, and a
+  # unit that ignored OBSERVATORY_HOST is active on every interface.
+  if curl -fsS -m 20 "http://127.0.0.1:$OBS_PORT/api/profile" >/dev/null 2>&1; then
+    ok "answering on 127.0.0.1:$OBS_PORT"
+  else
+    warn "unit is up but /api/profile has not answered — journalctl -u kannaka-observatory -n 30"
+  fi
+  if [ "$OBS_HOST" = "127.0.0.1" ] && have ss; then
+    if $SUDO ss -ltn 2>/dev/null | grep -q "127.0.0.1:$OBS_PORT"; then
+      ok "bound to loopback only"
+    else
+      warn "expected a loopback bind on port $OBS_PORT and did not find one"
+    fi
+  fi
+  say ""
+  say "  reach it:  ssh -L $OBS_PORT:127.0.0.1:$OBS_PORT $U@$(hostname -I 2>/dev/null | awk '{print $1}')"
+  say "             then open http://localhost:$OBS_PORT"
+  return 0
+}
+
 # ---------------------------------------------------------------- verify
 verify() {
   FAILED=0
@@ -389,6 +591,7 @@ case "$STEP" in
   configure) configure "$@";;
   credentials) credentials;;
   service) service "$@";;
+  observatory) observatory "$@";;
   verify) verify;;
   report) report;;
   uninstall) uninstall;;
