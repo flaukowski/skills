@@ -438,9 +438,22 @@ server.js
       || { echo "could not write $OBS_PROFILE" >&2; return 1; }
   fi
 
+  # Which kannaka the dashboard shells out to. $SYS_BIN is what `service` installs,
+  # but a box provisioned another way may only ever have had the one in ~/.local
+  # -- both lab nodes run kannaka-swarm.service off $LOCAL_BIN and have no
+  # /usr/local/bin/kannaka at all. Hardcoding $SYS_BIN gave those boxes a unit
+  # pointing at a file that does not exist, and the failure would have surfaced
+  # as an empty dashboard rather than as a missing binary.
+  OBS_KANNAKA=""
+  for cand in "$SYS_BIN" "$LOCAL_BIN"; do
+    [ -x "$cand" ] && { OBS_KANNAKA="$cand"; break; }
+  done
+  [ -n "$OBS_KANNAKA" ] || { echo "no kannaka binary at $SYS_BIN or $LOCAL_BIN - run install first" >&2; return 1; }
+  ok "dashboard will read $OBS_KANNAKA"
+
   if [ "$OBS_SERVICE" != true ]; then
     ok "installed, no service (--no-service). Run it by hand with:"
-    say "    cd $OBS_DIR && OBSERVATORY_HOST=$OBS_HOST PORT=$OBS_PORT KANNAKA_DATA_DIR=$DATA node server.js"
+    say "    cd $OBS_DIR && OBSERVATORY_HOST=$OBS_HOST PORT=$OBS_PORT KANNAKA_DATA_DIR=$DATA KANNAKA_BIN=$OBS_KANNAKA node server.js"
     return 0
   fi
 
@@ -468,7 +481,7 @@ WorkingDirectory=$OBS_DIR
 Environment=OBSERVATORY_HOST=$OBS_HOST
 Environment=PORT=$OBS_PORT
 Environment=KANNAKA_DATA_DIR=$DATA
-Environment=KANNAKA_BIN=$SYS_BIN
+Environment=KANNAKA_BIN=$OBS_KANNAKA
 ExecStart=/usr/bin/env node $OBS_DIR/server.js
 Restart=always
 RestartSec=10
