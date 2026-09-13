@@ -30,9 +30,9 @@
       "importedFrom": "NickFlach/kannaka-memory:workspace/skills/kannaka-memory"
     },
     "kannaka-node": {
-      "publishedVersion": "1.1.0",
+      "publishedVersion": "1.1.1",
       "importedFrom": "flaukowski/skills:skills/kannaka-node",
-      "note": "authored here 2026-09-09; provisions a Kannaka node over ssh (Oracle free tier first). 1.1.0 adds the observatory step: the node's own loopback-only dashboard."
+      "note": "authored here 2026-09-09; provisions a Kannaka node over ssh (Oracle free tier first). 1.1.0 adds the observatory step: the node's own loopback-only dashboard. 1.1.1 names a node from ~/.kannaka/agent_id, not only config.toml."
     },
     "kannaka-quantum": {
       "publishedVersion": "0.2.3",
