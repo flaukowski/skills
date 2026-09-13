@@ -102,9 +102,12 @@ Useful flags:
 
 - `--peer "Name=https://host"` — another observatory this one may overlay, repeatable. The
   peer is added to the SSRF allowlist, so declaring it is what makes it reachable.
-- `--agent-id NAME` — name the node explicitly. Use it when `[agent] id` in config.toml is
-  a generated placeholder while the node joins the swarm under a different name; that is
-  real and it happens on older boxes.
+- `--agent-id NAME` — name the node explicitly. Rarely needed now: the node is named from
+  `~/.kannaka/agent_id` (the id it actually joins the swarm under), falling back to
+  `[agent] id` in config.toml. Those two disagree on real boxes — one witness node's file
+  said `kannaka-witness-01` while its config said `agent-dfa19ce8`, a generated placeholder
+  — and the file is the one to trust. A replica node can have the file and no config at
+  all, which is fine; only an identity that cannot be determined at all is an error.
 - `--no-service` — install and configure but do not create a unit.
 - `--port N`, `--host ADDR`, `--force-profile`.
 

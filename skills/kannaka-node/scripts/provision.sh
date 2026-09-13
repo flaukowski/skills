@@ -347,7 +347,14 @@ observatory() {
   [ "$node_major" -ge 18 ] 2>/dev/null || { echo "node 18+ required, found $(node --version 2>/dev/null)" >&2; return 1; }
   have npm || { echo "npm is required. Install it, then re-run." >&2; return 1; }
   ok "node $(node --version), npm $(npm --version)"
-  [ -f "$CFG" ] || { echo "configure first: no $CFG (the profile is named from [agent] id)" >&2; return 1; }
+  # A node names itself from $DATA/agent_id (the id it joins the swarm under),
+  # falling back to [agent] id in config.toml. A replica node can have the file
+  # and no config at all, so requiring config.toml here refused a perfectly
+  # nameable node. Only an identity we cannot determine AT ALL is fatal.
+  if [ ! -f "$DATA/agent_id" ] && [ ! -f "$CFG" ] && [ -z "$OBS_AGENT_OVERRIDE" ]; then
+    echo "cannot name this node: no $DATA/agent_id and no $CFG - pass --agent-id NAME, or run configure first" >&2
+    return 1
+  fi
 
   # -- where the code comes from --
   # The repo is private, so there is no unauthenticated clone. In order: an
@@ -437,7 +444,10 @@ server.js
     return 0
   fi
 
-  OBS_AGENT="$OBS_AGENT_OVERRIDE"; [ -n "$OBS_AGENT" ] || OBS_AGENT="$(toml_get "$CFG" agent id)"
+  OBS_AGENT="$OBS_AGENT_OVERRIDE"
+  if [ -z "$OBS_AGENT" ] && [ -f "$DATA/agent_id" ]; then OBS_AGENT="$(tr -d " 
+" < "$DATA/agent_id")"; fi
+  [ -n "$OBS_AGENT" ] || OBS_AGENT="$(toml_get "$CFG" agent id)"
   unit_obs="$(cat <<EOF
 # kannaka-observatory.service — written by kannaka-node/provision.sh
 #
