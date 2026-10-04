@@ -69,7 +69,12 @@ if (changelog) args.push("--changelog", changelog);
 console.log(`\npublishing ${slug}@${version}...`);
 // On Windows `clawhub` is a .cmd shim, which execFile cannot resolve on its
 // own — hence shell:true. Args are ours, not user input.
-execFileSync("clawhub", args, { stdio: "inherit", shell: process.platform === "win32" });
+// With shell:true, Windows joins the args into one command line, so an argument with a space
+// (a changelog sentence) splits into several and clawhub rejects "too many arguments". Quote them.
+const shellArgs = process.platform === "win32"
+  ? args.map((a) => (/[\s"]/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a))
+  : args;
+execFileSync("clawhub", shellArgs, { stdio: "inherit", shell: process.platform === "win32" });
 
 // 3. Verify — the registry is the authority, not the CLI's exit message.
 //
@@ -85,7 +90,10 @@ let live = [];
 console.log("\nwaiting for the registry to serve it (publishes are async)...");
 while (Date.now() - started < DEADLINE_MS) {
   const res = await fetch(`${manifest.registry}/api/v1/skills/${slug}/versions?cb=${Date.now()}`);
-  live = (await res.json()).items?.map((i) => i.version) ?? [];
+  // Until the publish lands the registry answers in plain text ("Skill not found"), not JSON.
+  let body = null;
+  try { body = JSON.parse(await res.text()); } catch { body = null; }
+  live = body?.items?.map((i) => i.version) ?? [];
   if (live.includes(version)) break;
   process.stdout.write(`  not yet (${Math.round((Date.now() - started) / 1000)}s), retrying\n`);
   await new Promise((r) => setTimeout(r, EVERY_MS));

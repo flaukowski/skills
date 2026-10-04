@@ -87,7 +87,7 @@
       "note": "superseded by kannaka-radio (3.0.0); consolidate"
     },
     "spacechild-research-ledger": {
-      "publishedVersion": null,
+      "publishedVersion": "1.0.0",
       "importedFrom": "flaukowski/skills:skills/spacechild-research-ledger",
       "note": "authored here 2026-10-04; not yet published. Join the SpaceChild research ledger, file records with hashed evidence, review (kannaka-open-review). Ships scripts/ledger.py (stdlib, dry-run by default)."
     }
